@@ -141,36 +141,36 @@ app.post('/webhook/fulfillment', async (req, res) => {
 //     }
 //   }
 // });
-cron.schedule('* * * * *', async () => {
-  console.log('⏱ [TEST CRON] tick at', new Date().toISOString());
+// 4, 7, 10, 13, 16 days after issuance, every day at 13:00 server-time
+cron.schedule('0 13 * * *', async () => {
+  console.log('🕒 [CRON] daily nudge check at', new Date().toISOString())
 
-  // minute‐based “days” for testing:
-  const intervals = [4,7,10,13,16];   // 1 min, 2 mins, 5 mins after issue
-  const nowMs     = Date.now();
+  const intervals = [4, 7, 10, 13, 16]   // days after coupon.createdAt
+  const nowMs     = Date.now()
 
-  // grab all coupons still unused
-  const docs = await coupons.find({ used: false }).toArray();
+  // grab all still-unused coupons
+  const docs = await coupons.find({ used: false }).toArray()
 
   for (const doc of docs) {
-    const createdMs      = new Date(doc.createdAt).getTime();
-    const minutesElapsed = Math.floor((nowMs - createdMs) / 60000);
+    const createdMs  = new Date(doc.createdAt).getTime()
+    const daysElapsed = Math.floor((nowMs - createdMs) / 86_400_000)  // ms in a day
 
-    for (const m of intervals) {
-      if (minutesElapsed === m && !doc.remindersSent.includes(m)) {
+    for (const day of intervals) {
+      if (daysElapsed === day && !(doc.remindersSent || []).includes(day)) {
         try {
-          console.log(`→ sending nudge_${m} to ${doc.phone} (after ${m} min)`);
-          await callChatPowers(doc.phone, `nudge_${m}`, { coupon: doc.coupon });
+          console.log(`→ sending nudge_${day} to ${doc.phone} (after ${day} days)`)
+          await callChatPowers(doc.phone, `nudge_${day}`, { coupon: doc.coupon })
           await coupons.updateOne(
             { _id: doc._id },
-            { $push: { remindersSent: m } }
-          );
+            { $push: { remindersSent: day } }
+          )
         } catch (err) {
-          console.error(`✖ nudge_${m} failed for`, doc.phone, err);
+          console.error(`✖ nudge_${day} failed for ${doc.phone}`, err)
         }
       }
     }
   }
-});
+})
 
 // start server…
 app.listen(3000, () => console.log('API & TEST‐CRON running on :3000'));
