@@ -142,10 +142,60 @@ app.post('/webhook/fulfillment', async (req, res) => {
 //   }
 // });
 // 4, 7, 10, 13, 16 days after issuance, every day at 13:00 server-time
+
+// 3-b) “Fulfillment updated” webhook
+app.post('/webhook/fulfillment_update', async (req, res) => {
+  const f = req.body.fulfillment || {};
+  // get phone either from destination.phone or your note_attributes
+  const rawPhone = f.destination?.phone
+                || f.order?.note_attributes?.find(a => a.name === 'whatsapp_phone')?.value;
+  if (!rawPhone) return res.sendStatus(200);
+
+  const phone  = decodeURIComponent(rawPhone);
+  const status = f.delivery_status?.status;             // e.g. "IN_TRANSIT"
+  if (!status) return res.sendStatus(200);
+
+  const orderId = f.order_id || f.name;
+  console.log('📦 fulfillment_update ➡', phone, status, 'order:', orderId);
+
+  // 1) send to Zoko
+  await callChatPowers(
+    phone,
+    status.toLowerCase(),                              // "in_transit", "delivered", etc.
+    { order: orderId }
+  );
+
+  // 2) record this status in Mongo
+  await coupons.updateOne(
+    { phone },
+    { 
+      $push: {
+        statusUpdates: {
+          status,
+          at: new Date()
+        }
+      }
+    }
+  );
+
+  // 3) if finally delivered, retire the coupon
+  if (status === 'DELIVERED') {
+    await coupons.updateOne(
+      { phone, used: false },
+      {
+        $set:     { used: true, usedAt: new Date() },
+        $push:    { statusUpdates: { status: 'USED', at: new Date() } }
+      }
+    );
+  }
+
+  res.sendStatus(200);
+});
+
 cron.schedule('0 13 * * *', async () => {
   console.log('🕒 [CRON] daily nudge check at', new Date().toISOString())
 
-  const intervals = [4, 7, 10, 13, 16]   // days after coupon.createdAt
+  const intervals = [2, 4, 6, 8, 10]   // days after coupon.createdAt
   const nowMs     = Date.now()
 
   // grab all still-unused coupons
@@ -171,8 +221,5 @@ cron.schedule('0 13 * * *', async () => {
     }
   }
 })
-
-// start server…
-app.listen(3000, () => console.log('API & TEST‐CRON running on :3000'));
 
 app.listen(3000, () => console.log('API running on :3000'));
