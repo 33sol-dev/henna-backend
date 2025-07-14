@@ -62,6 +62,7 @@ app.post('/api/coupon', async (req, res) => {
 
 // 2) Order‐created webhook
 app.post('/webhook/order_created', async (req, res) => {
+  //console.log(req);
   const order = req.body;
   const attr  = (order.note_attributes || [])
                 .find(a => a.name === 'whatsapp_phone');
