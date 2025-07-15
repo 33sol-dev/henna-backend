@@ -157,7 +157,7 @@ app.post('/webhook/fulfillment_update', async (req, res) => {
   if (!rawPhone) return res.sendStatus(200);
 
   const phone  = decodeURIComponent(rawPhone);
-  const status = f.delivery_status?.status;             // e.g. "IN_TRANSIT"
+  const status = f.delivery_status?.status || f.shipment_status;             // e.g. "IN_TRANSIT"
   if (!status) return res.sendStatus(200);
 
   const orderId = f.order_id || f.name;
