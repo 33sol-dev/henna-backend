@@ -64,6 +64,7 @@ app.post('/api/coupon', async (req, res) => {
 app.post('/webhook/order_created', async (req, res) => {
   //console.log(req);
   const order = req.body;
+  //console.log(order);
   const attr  = (order.note_attributes || [])
                 .find(a => a.name === 'whatsapp_phone');
   if (!attr) return res.sendStatus(200);
@@ -147,6 +148,9 @@ app.post('/webhook/fulfillment', async (req, res) => {
 // 3-b) “Fulfillment updated” webhook
 app.post('/webhook/fulfillment_update', async (req, res) => {
   const f = req.body.fulfillment || {};
+  console.log('📬 [webhook/fulfillment_update] headers:', req.headers);
+  console.log('📬 [webhook/fulfillment_update] body:', JSON.stringify(req.body, null, 2));
+
   // get phone either from destination.phone or your note_attributes
   const rawPhone = f.destination?.phone
                 || f.order?.note_attributes?.find(a => a.name === 'whatsapp_phone')?.value;
