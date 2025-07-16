@@ -147,16 +147,18 @@ app.post('/webhook/fulfillment', async (req, res) => {
 
 // 3-b) “Fulfillment updated” webhook
 app.post('/webhook/fulfillment_update', async (req, res) => {
-  const f = req.body.fulfillment || {};
-  console.log('📬 [webhook/fulfillment_update] headers:', req.headers);
-  console.log('📬 [webhook/fulfillment_update] body:', JSON.stringify(req.body, null, 2));
-
+  const f = req.body.fulfillment || req.body||{};
+  // console.log('📬 [webhook/fulfillment_update] headers:', req.headers);
+  // console.log('📬 [webhook/fulfillment_update] body:', JSON.stringify(req.body, null, 2));
+  console.log(f);
   // get phone either from destination.phone or your note_attributes
   const rawPhone = f.destination?.phone
                 || f.order?.note_attributes?.find(a => a.name === 'whatsapp_phone')?.value;
+                console.log(rawPhone+"raw");
   if (!rawPhone) return res.sendStatus(200);
 
-  const phone  = decodeURIComponent(rawPhone);
+  const phone  = normalizeToIndia(decodeURIComponent(rawPhone));
+  console.log(phone);
   const status = f.shipment_status;             // e.g. "IN_TRANSIT"
   if (!status) return res.sendStatus(200);
 
@@ -226,5 +228,14 @@ cron.schedule('0 13 * * *', async () => {
     }
   }
 })
+
+function normalizeToIndia(phone) {
+  // strip everything but digits
+  let digits = String(phone).replace(/\D/g, '');
+  // if it doesn’t already start “91”, add it
+  if (!digits.startsWith('91')) digits = '91' + digits;
+  // return with the plus
+  return '+' + digits;
+}
 
 app.listen(3000, () => console.log('API running on :3000'));
