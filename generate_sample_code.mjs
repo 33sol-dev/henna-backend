@@ -227,6 +227,8 @@ cron.schedule('0 13 * * *', async () => {
       }
     }
   }
+},{
+  timezone: 'Asia/Kolkata'
 })
 
 function normalizeToIndia(phone) {
