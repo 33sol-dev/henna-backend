@@ -3,7 +3,7 @@ import express from 'express';
 import cron    from 'node-cron';
 import 'dotenv/config';
 
-import { coupons } from './utils/db.mjs';
+import { coupons, pins }    from './utils/db.mjs';
 import {
   makeRandomCode,
   shopifyGraphQL,
@@ -150,7 +150,7 @@ app.post('/webhook/fulfillment_update', async (req, res) => {
   const f = req.body.fulfillment || req.body||{};
   // console.log('📬 [webhook/fulfillment_update] headers:', req.headers);
   // console.log('📬 [webhook/fulfillment_update] body:', JSON.stringify(req.body, null, 2));
-  console.log(f);
+  //console.log(f);
   // get phone either from destination.phone or your note_attributes
   const rawPhone = f.destination?.phone
                 || f.order?.note_attributes?.find(a => a.name === 'whatsapp_phone')?.value;
@@ -228,8 +228,8 @@ cron.schedule('0 13 * * *', async () => {
     }
   }
 },{
-  timezone: 'Asia/Kolkata'
-})
+    timezone: 'Asia/Kolkata'
+  })
 
 function normalizeToIndia(phone) {
   // strip everything but digits
@@ -239,5 +239,40 @@ function normalizeToIndia(phone) {
   // return with the plus
   return '+' + digits;
 }
+function make4DigitCode() {
+  const n = Math.floor(Math.random() * 10000);
+  return String(n).padStart(4, '0');
+}
+
+app.post('/api/pin', async (req, res) => {
+  const phone = (req.body.phone || '').trim();
+  if (!phone) {
+    return res.status(400).json({ error: 'phone required' });
+  }
+
+  // 1) see if there's already one
+  let doc = await pins.findOne({ phone });
+  if (doc) {
+    return res.json({ code: doc.code, reused: true });
+  }
+
+  // 2) otherwise generate + insert
+  const code = make4DigitCode();
+  try {
+    await pins.insertOne({ phone, code, createdAt: new Date() });
+  } catch (err) {
+    // duplicate‐key bounce (race or index violation)
+    if (err.code === 11000) {
+      doc = await pins.findOne({ phone });
+      return res.json({ code: doc.code, reused: true });
+    }
+    console.error('pin‐insert‐err', err);
+    return res.sendStatus(500);
+  }
+
+  // 3) return the brand‑new code
+  res.json({ code, reused: false });
+});
+
 
 app.listen(3000, () => console.log('API running on :3000'));
