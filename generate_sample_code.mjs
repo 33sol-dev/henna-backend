@@ -146,58 +146,53 @@ app.post('/webhook/fulfillment', async (req, res) => {
 // 4, 7, 10, 13, 16 days after issuance, every day at 13:00 server-time
 
 // 3-b) “Fulfillment updated” webhook
+// 3‑b) “Fulfillment updated” webhook (idempotent)
 app.post('/webhook/fulfillment_update', async (req, res) => {
-  const f = req.body.fulfillment || req.body||{};
-  // console.log('📬 [webhook/fulfillment_update] headers:', req.headers);
-  // console.log('📬 [webhook/fulfillment_update] body:', JSON.stringify(req.body, null, 2));
-  //console.log(f);
-  // get phone either from destination.phone or your note_attributes
+  const f = req.body.fulfillment || req.body || {};
   const rawPhone = f.destination?.phone
                 || f.order?.note_attributes?.find(a => a.name === 'whatsapp_phone')?.value;
-                console.log(rawPhone+"raw");
   if (!rawPhone) return res.sendStatus(200);
 
   const phone  = normalizeToIndia(decodeURIComponent(rawPhone));
-  console.log(phone);
-  const status = f.shipment_status;             // e.g. "IN_TRANSIT"
+  const status = (f.delivery_status?.status || f.shipment_status)?.toLowerCase();
   if (!status) return res.sendStatus(200);
 
   const orderId = f.order_id || f.name;
-  console.log('📦 fulfillment_update ➡', phone, status, 'order:', orderId);
 
-  // 1) send to Zoko
-  await callChatPowers(
+  // 1) **Dedupe**: only proceed if we haven’t already recorded this exact status
+  const already = await coupons.findOne({
     phone,
-    status.toLowerCase(),                              // "in_transit", "delivered", etc.
-    { order: orderId }
-  );
+    'statusUpdates.status': status
+  });
+  if (already) {
+    console.log(`⏩ skipping duplicate status "${status}" for ${phone}`);
+    return res.sendStatus(200);
+  }
 
-  // 2) record this status in Mongo
+  // 2) record that we’ve now seen this status
   await coupons.updateOne(
     { phone },
-    { 
-      $push: {
-        statusUpdates: {
-          status,
-          at: new Date()
-        }
-      }
-    }
+    { $push: { statusUpdates: { status, at: new Date() } } }
   );
 
-  // 3) if finally delivered, retire the coupon
-  if (status === 'DELIVERED') {
+  // 3) send to Zoko
+  console.log(`📦 fulfillment_update ➡ ${phone} ${status} order:${orderId}`);
+  await callChatPowers(phone, status, { order: orderId });
+
+  // 4) if it’s final, retire the coupon
+  if (status === 'delivered') {
     await coupons.updateOne(
       { phone, used: false },
       {
-        $set:     { used: true, usedAt: new Date() },
-        $push:    { statusUpdates: { status: 'USED', at: new Date() } }
+        $set:  { used: true, usedAt: new Date() },
+        $push: { statusUpdates: { status: 'used', at: new Date() } }
       }
     );
   }
 
   res.sendStatus(200);
 });
+
 
 cron.schedule('0 13 * * *', async () => {
   console.log('🕒 [CRON] daily nudge check at', new Date().toISOString())
